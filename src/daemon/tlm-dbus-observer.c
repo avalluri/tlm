@@ -490,9 +490,16 @@ _process_request (
         if (!seat && self->priv->manager) {
             DBG ("seat id %s and session id %s", dbus_req->seat_id,
                     dbus_req->sessionid);
-            if (dbus_req->seat_id)
+            if (dbus_req->seat_id) {
                 seat = tlm_manager_get_seat (self->priv->manager,
                     dbus_req->seat_id);
+                /* Seat might not ready yet, proceede when its ready */
+                if (!seat) {
+                    g_queue_push_head(self->priv->request_queue, req);
+                    //g_signal_connect_swapped(self->priv->manager, "seat-added", G_CALLBACK(_on_seat_ready), self);
+                    return TRUE;
+                }
+            }
             else if (dbus_req->sessionid)
                 seat = tlm_manager_get_seat_by_sessionid (self->priv->manager,
                     dbus_req->sessionid);
