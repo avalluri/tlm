@@ -86,19 +86,12 @@ enum {
 
 static guint signals[SIG_MAX];
 
-typedef struct _TlmSeatWatchClosure
-{
-    TlmManager *manager;
-    gchar *seat_id;
-    gchar *seat_path;
-} TlmSeatWatchClosure;
-
 static void
 _unref_auth_plugins (gpointer data)
 {
-	GObject *plugin = G_OBJECT (data);
+    GObject *plugin = G_OBJECT (data);
 
-	g_object_unref (plugin);
+    g_object_unref (plugin);
 }
 
 static void
@@ -126,7 +119,7 @@ tlm_manager_dispose (GObject *self)
     g_clear_object (&manager->priv->config);
 
     if (manager->priv->auth_plugins) {
-    	g_list_free_full(manager->priv->auth_plugins, _unref_auth_plugins);
+        g_list_free_full(manager->priv->auth_plugins, _unref_auth_plugins);
     }
 
     g_clear_string (&manager->priv->initial_user);
@@ -505,120 +498,37 @@ _session_terminated_cb (GObject *emitter, const gchar *session_id,
 }
 
 static void
-_create_seat (TlmManager *manager,
-              const gchar *seat_id, const gchar *seat_path)
-{
-    g_return_if_fail (manager && TLM_IS_MANAGER (manager));
-
-    TlmManagerPrivate *priv = TLM_MANAGER_PRIV (manager);
-
-    TlmSeat *seat = tlm_seat_new (priv->config,
-                                  seat_id,
-                                  seat_path);
-    g_signal_connect (seat,
-                      "prepare-user-login",
-                      G_CALLBACK (_prepare_user_login_cb),
-                      manager);
-    g_signal_connect (seat,
-                      "prepare-user-logout",
-                      G_CALLBACK (_prepare_user_logout_cb),
-                      manager);
-    g_signal_connect_after (seat,
-                      "session-terminated",
-                      G_CALLBACK (_session_terminated_cb),
-                      manager);
-    g_hash_table_insert (priv->seats, g_strdup (seat_id), seat);
-    g_signal_emit (manager, signals[SIG_SEAT_ADDED], 0, seat, NULL);
-
-    if (tlm_config_get_boolean (priv->config,
-                                TLM_CONFIG_GENERAL,
-                                TLM_CONFIG_GENERAL_AUTO_LOGIN,
-                                TRUE) ||
-        priv->initial_user) {
-        DBG("intial auto-login for user '%s'", priv->initial_user);
-        if (!tlm_seat_create_session (seat,
-                                      NULL,
-                                      priv->initial_user,
-                                      NULL,
-                                      NULL))
-            WARN("Failed to create session for default user");
-    }
-}
-
-static void
-_seat_watch_cb (
-    const gchar *watch_item,
-    gboolean is_final,
-    GError *error,
-    gpointer user_data)
-{
-    g_return_if_fail (watch_item && user_data);
-
-    TlmSeatWatchClosure *closure = (TlmSeatWatchClosure *) user_data;
-
-    if (error) {
-      WARN ("Error in notify %s on seat %s: %s", watch_item, closure->seat_id,
-          error->message);
-      g_error_free (error);
-      return;
-    }
-
-    DBG ("seat %s notify for %s", closure->seat_id, watch_item);
-
-    if (is_final) {
-        _create_seat (closure->manager, closure->seat_id, closure->seat_path);
-        g_object_unref (closure->manager);
-        g_free (closure->seat_id);
-        g_free (closure->seat_path);
-        g_free (closure);
-    }
-}
-
-static void
 _add_seat (TlmManager *manager, const gchar *seat_id, const gchar *seat_path)
 {
     g_return_if_fail (manager && TLM_IS_MANAGER (manager));
 
     TlmManagerPrivate *priv = TLM_MANAGER_PRIV (manager);
+    TlmSeat *seat = NULL;
 
-    if (!tlm_config_get_boolean (priv->config,
-                                 seat_id,
-                                 TLM_CONFIG_SEAT_ACTIVE,
+    if (!tlm_config_get_boolean (priv->config, seat_id, TLM_CONFIG_SEAT_ACTIVE,
                                  TRUE))
         return;
 
-    guint nwatch = tlm_config_get_uint (priv->config,
-                                        seat_id,
-                                        TLM_CONFIG_SEAT_NWATCH,
-                                        0);
-    if (nwatch) {
-        int x;
-        int watch_id = 0;
-        gchar **watch_items = g_new0 (gchar *, nwatch + 1);
-        for (x = 0; x < nwatch; x++) {
-          gchar *watchx = g_strdup_printf ("%s%u", TLM_CONFIG_SEAT_WATCHX, x);
-          watch_items[x] = (char *)tlm_config_get_string (
-              priv->config, seat_id, watchx);
-          g_free (watchx);
-        }
-        watch_items[nwatch] = NULL;
-        TlmSeatWatchClosure *watch_closure = 
-            g_new0 (TlmSeatWatchClosure, 1);
-        watch_closure->manager = g_object_ref (manager);
-        watch_closure->seat_id = g_strdup (seat_id);
-        watch_closure->seat_path = g_strdup (seat_path);
-
-        watch_id = tlm_utils_watch_for_files (
-            (const gchar **)watch_items, _seat_watch_cb, watch_closure);
-        g_free (watch_items);
-        if (watch_id <= 0) {
-            WARN ("Failed to add watch on seat %s", seat_id);
-        } else {
-            return;
-        }
+    if (!(seat = tlm_seat_new (priv->config, seat_id, seat_path))) {
+        WARN("Failed to create seat: %s:%s", seat_id, seat_path);
     }
 
-    _create_seat (manager, seat_id, seat_path);
+    g_signal_connect (seat, "prepare-user-login",
+                      G_CALLBACK (_prepare_user_login_cb), manager);
+    g_signal_connect (seat, "prepare-user-logout",
+                      G_CALLBACK (_prepare_user_logout_cb), manager);
+    g_signal_connect_after (seat, "session-terminated",
+                            G_CALLBACK (_session_terminated_cb), manager);
+    g_hash_table_insert (priv->seats, g_strdup (seat_id), seat);
+
+    g_signal_emit (manager, signals[SIG_SEAT_ADDED], 0, seat, NULL);
+
+    if (tlm_config_get_boolean (priv->config, TLM_CONFIG_GENERAL,
+                                TLM_CONFIG_GENERAL_AUTO_LOGIN, TRUE) ||
+            priv->initial_user) {
+        DBG("intial auto-login for user '%s'", priv->initial_user);
+        tlm_seat_create_session (seat, NULL, priv->initial_user, NULL, NULL);
+    }
 }
 
 static void
