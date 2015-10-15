@@ -573,11 +573,12 @@ _proceed_pending_session (gpointer user_data)
 
     if (seat->priv->pending_session_info) {
         SessionInfo *info = seat->priv->pending_session_info;
-        DBG ("delayed re-login for seat=%s, service=%s, user=%s",
+        DBG ("start pending login for seat=%s, service=%s, user=%s",
                 seat->priv->id, info->service, info->username);
+        seat->priv->pending_session_info = NULL;
         tlm_seat_create_session (seat, info->service, info->username,
                 info->password, info->environment);
-        _session_info_clear(&seat->priv->pending_session_info);
+        _session_info_clear(&info);
     }
 
     return G_SOURCE_REMOVE;
