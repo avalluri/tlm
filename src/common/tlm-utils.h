@@ -67,7 +67,7 @@ tlm_utils_split_command_lines (const GList const *commands_list);
 typedef void (*WatchCb) (const gchar *found_item, gboolean is_final, GError *error, gpointer userdata);
 
 guint
-tlm_utils_watch_for_files (const gchar **watch_list, WatchCb cb, gpointer userdata);
+tlm_utils_watch_for_files (const gchar **watch_list, WatchCb cb, gpointer userdata, gint *rerr);
 
 gboolean
 tlm_authenticate_user (TlmConfig *config, const gchar *username, const gchar *password);

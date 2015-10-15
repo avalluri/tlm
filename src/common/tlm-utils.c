@@ -647,16 +647,20 @@ guint
 tlm_utils_watch_for_files (
     const gchar **watch_list,
     WatchCb cb,
-    gpointer userdata)
+    gpointer userdata,
+    gint *rerr)
 {
   gint nwatch = 0;
   int ifd = 0;
   WatchInfo *w_info = NULL;
+  guint fd = 0;
+  if (rerr) *rerr = 0;
 
   if (!watch_list) return 0;
 
   if ((ifd = inotify_init1 (IN_NONBLOCK | IN_CLOEXEC)) < 0) {
     WARN("Failed to start inotify: %s", strerror(errno));
+    if (rerr) *rerr = -errno;
     return 0;
   }
 
@@ -677,11 +681,15 @@ tlm_utils_watch_for_files (
 
   if (nwatch == 0) {
     _watch_info_free (w_info);
+    /* Callback has been triggered already */
     return 0;
   }
 
-  return g_unix_fd_add_full (G_PRIORITY_DEFAULT, ifd, G_IO_IN,
-      _inotify_watcher_cb, w_info, (GDestroyNotify)_watch_info_free);
+  fd = g_unix_fd_add_full (G_PRIORITY_DEFAULT, ifd, G_IO_IN,
+          _inotify_watcher_cb, w_info, (GDestroyNotify)_watch_info_free);
+  if (!fd && rerr) *rerr = -1;
+
+  return fd;
 }
 
 typedef struct _TlmLoginInfo

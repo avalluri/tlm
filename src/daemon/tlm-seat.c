@@ -763,6 +763,8 @@ tlm_seat_new (TlmConfig *config,
               const gchar *path)
 {
     guint nwatch = 0;
+    gint rval = -1;
+    DBG ("TESTING --- seat NEW");
     TlmSeat *seat = g_object_new (TLM_TYPE_SEAT, "config", config,
                                   "id", id, "path", path, NULL);
     if (!seat) return NULL;
@@ -781,8 +783,9 @@ tlm_seat_new (TlmConfig *config,
         watch_items[nwatch] = NULL;
 
         if ((seat->priv->watch_id = tlm_utils_watch_for_files (
-            (const gchar **)watch_items, _seat_watch_cb, seat)) <= 0) {
-            WARN ("Failed to add watch for on seat %s", id);
+            (const gchar **)watch_items, _seat_watch_cb, seat, &rval)) == 0
+                && rval < 0) {
+            WARN ("Failed to add watch for on seat %s, error: %d", id, rval);
             // FIXME: Can we ignore watch and continue using seat???
             g_object_unref(seat);
             seat = NULL;

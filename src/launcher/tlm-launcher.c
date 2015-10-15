@@ -172,7 +172,7 @@ static void _tlm_launcher_process (TlmLauncher *l)
       case 'W': {
         gchar **sockets = g_strsplit(cmd, ",", -1);
         l->socket_watcher = tlm_utils_watch_for_files (
-            (const gchar **)sockets, _on_socket_ready, l);
+            (const gchar **)sockets, _on_socket_ready, l, NULL);
         g_strfreev (sockets);
         if (l->socket_watcher) return;
         }
