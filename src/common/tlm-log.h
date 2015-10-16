@@ -36,8 +36,12 @@ G_BEGIN_DECLS
 void tlm_log_init (const gchar *domain);
 void tlm_log_close (const gchar *domain);
 
+#ifndef FILE_NAME__
+#define FILE_NAME__ __FILE__
+#endif
+
 #define EXPAND_LOG_MSG(frmt, args...) "%f %s +%d %s :" frmt, \
-    g_get_monotonic_time()*1.0e-6, __FILE__, __LINE__, __PRETTY_FUNCTION__, \
+    g_get_monotonic_time()*1.0e-6, FILE_NAME__, __LINE__, __PRETTY_FUNCTION__, \
     ##args
 
 #ifdef ENABLE_DEBUG
