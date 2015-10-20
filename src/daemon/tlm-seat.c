@@ -764,7 +764,6 @@ tlm_seat_new (TlmConfig *config,
 {
     guint nwatch = 0;
     gint rval = -1;
-    DBG ("TESTING --- seat NEW");
     TlmSeat *seat = g_object_new (TLM_TYPE_SEAT, "config", config,
                                   "id", id, "path", path, NULL);
     if (!seat) return NULL;

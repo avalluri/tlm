@@ -196,11 +196,13 @@ static void help ()
 int main (int argc, char *argv[])
 {
   struct option opts[] = {
+    { "dbus", no_argument, NULL, 'b' },
     { "file", required_argument, NULL, 'f' },
     { "sessionid", required_argument, NULL, 's' },
     { "help", no_argument, NULL, 'h' },
     { 0, 0, NULL, 0 }
   };
+
   int i, c;
   gchar *file = NULL;
   TlmLauncher launcher;
@@ -209,10 +211,11 @@ int main (int argc, char *argv[])
   TlmProcessManager *proc_manager = NULL;
   const gchar *runtime_dir = NULL;
   gchar *sessionid = NULL;
+  gboolean enable_dbus = FALSE;
 
   tlm_log_init("TLM_LAUNCHER");
 
-  while ((c = getopt_long (argc, argv, "f:s:h", opts, &i)) != -1) {
+  while ((c = getopt_long (argc, argv, "bhf:s:", opts, &i)) != -1) {
     switch(c) {
       case 'h':
         help();
@@ -220,6 +223,10 @@ int main (int argc, char *argv[])
       case 'f':
         file = g_strdup (optarg);
         DBG("file found %s", file);
+        break;
+      case 'b':
+        enable_dbus = TRUE;
+        DBG("enable dbus");
         break;
       case 's':
         sessionid = g_strdup (optarg);
@@ -246,24 +253,26 @@ int main (int argc, char *argv[])
   }
   g_free (file);
 
-  runtime_dir = g_getenv ("XDG_RUNTIME_DIR");
-
-  if (sessionid && runtime_dir)
-	  address = g_strdup_printf ("unix:path=%s/%s", runtime_dir,
-              sessionid);
-  else if (sessionid)
-      address = g_strdup_printf ("unix:path=/run/user/%d/%s", getuid(),
-              sessionid);
-  else if (runtime_dir)
-      address = g_strdup_printf ("unix:path=%s/%d", runtime_dir, getpid());
-  else
-      address = g_strdup_printf ("unix:path=/run/user/%d/%d", getuid(),
-              getpid());
+  if (enable_dbus) {
+      runtime_dir = g_getenv ("XDG_RUNTIME_DIR");
+      if (sessionid && runtime_dir)
+          address = g_strdup_printf ("unix:path=%s/%s", runtime_dir,
+                  sessionid);
+      else if (sessionid)
+          address = g_strdup_printf ("unix:path=/run/user/%d/%s", getuid(),
+                  sessionid);
+      else if (runtime_dir)
+          address = g_strdup_printf ("unix:path=%s/%d", runtime_dir, getpid());
+      else
+          address = g_strdup_printf ("unix:path=/run/user/%d/%d", getuid(),
+                  getpid());
+      g_setenv ("TLM_LAUNCHER_DBUS_ADDRESS", address, TRUE);
+      DBG ("Tlm launcher pid:%d, dbus addr: %s, sessionid: %s,"
+              " runtimedir: %s\n", getpid(), address, sessionid, runtime_dir);
+  }
 
   config = tlm_config_new ();
   launcher.proc_manager = tlm_process_manager_new (config, address, getuid());
-  DBG ("Tlm launcher pid:%d, dbus addr: %s, sessionid: %s, runtimedir: %s\n",
-          getpid(), address, sessionid, runtime_dir);
   g_free (sessionid);
   g_free (address); address = NULL;
 

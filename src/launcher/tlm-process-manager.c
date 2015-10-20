@@ -522,20 +522,22 @@ tlm_process_manager_new (
         g_object_new (TLM_TYPE_PROCESS_MANAGER, "config", config, NULL);
     DBG ("%p", proc_manager);
 
-    if (!_start_dbus_server (proc_manager, dbus_address, uid)) {
-        WARN ("Launcher DbusObserver startup failed");
-        g_object_unref (proc_manager);
-        return NULL;
-    }
+    if (dbus_address) {
+        if (!_start_dbus_server (proc_manager, dbus_address, uid)) {
+            WARN ("Launcher DbusObserver startup failed");
+            g_object_unref (proc_manager);
+            return NULL;
+        }
 
-    g_signal_connect_swapped (proc_manager->priv->dbus_server,
-            "new-connection", G_CALLBACK(_handle_dbus_server_new_connection),
-            proc_manager);
-    g_signal_connect_swapped (proc_manager->priv->dbus_server,
-            "client-added", G_CALLBACK (_handle_dbus_server_client_added),
-            proc_manager);
-    g_signal_connect_swapped (proc_manager->priv->dbus_server,
-            "client-removed", G_CALLBACK(_handle_dbus_server_client_removed),
-            proc_manager);
+        g_signal_connect_swapped (proc_manager->priv->dbus_server,
+                "new-connection",
+                G_CALLBACK(_handle_dbus_server_new_connection), proc_manager);
+        g_signal_connect_swapped (proc_manager->priv->dbus_server,
+                "client-added", G_CALLBACK (_handle_dbus_server_client_added),
+                proc_manager);
+        g_signal_connect_swapped (proc_manager->priv->dbus_server,
+                "client-removed",
+                G_CALLBACK(_handle_dbus_server_client_removed), proc_manager);
+    }
     return proc_manager;
 }
