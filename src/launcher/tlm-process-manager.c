@@ -326,7 +326,7 @@ _on_process_down_cb (
 
     if (!self->priv->launched_processes ||
         g_hash_table_size (self->priv->launched_processes) == 0) {
-        DBG("All childs dead, going down...");
+        DBG("all childs dead, going down...");
         kill (0, SIGINT);
     }
 }

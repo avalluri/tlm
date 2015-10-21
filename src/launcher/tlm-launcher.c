@@ -42,7 +42,7 @@
 
 typedef struct {
   GMainLoop *loop;
-  guint sig_source_id[2];
+  guint sig_source_id[3];
   FILE *fp;
   guint socket_watcher;
   TlmProcessManager *proc_manager;
@@ -75,6 +75,7 @@ _install_sighandlers (TlmLauncher *l)
 
     l->sig_source_id[0] = g_unix_signal_add (SIGTERM, _handle_quit_signal, l);
     l->sig_source_id[1] = g_unix_signal_add (SIGHUP, _handle_quit_signal, l);
+    l->sig_source_id[2] = g_unix_signal_add (SIGINT, _handle_quit_signal, l);
 
     if (prctl(PR_SET_PDEATHSIG, SIGHUP))
         WARN ("failed to set parent death signal");
@@ -108,6 +109,7 @@ _tlm_launcher_deinit (TlmLauncher *l)
   if (l->proc_manager)
       g_object_unref (l->proc_manager);
 
+  g_source_remove (l->sig_source_id[2]);
   g_source_remove (l->sig_source_id[1]);
   g_source_remove (l->sig_source_id[0]);
 }
