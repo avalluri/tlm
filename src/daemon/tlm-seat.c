@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <glib.h>
 
 #include "config.h"
 
@@ -37,6 +38,7 @@
 #include "tlm-error.h"
 #include "tlm-utils.h"
 #include "tlm-config-general.h"
+#include "tlm-config-seat.h"
 #include "tlm-dbus-observer.h"
 
 G_DEFINE_TYPE (TlmSeat, tlm_seat, G_TYPE_OBJECT);
@@ -64,16 +66,48 @@ enum {
 };
 static guint signals[SIG_MAX];
 
+typedef struct _SessionInfo {
+    gchar *username;
+    gchar *password;
+    gchar *service;
+    GHashTable *environment;
+} SessionInfo;
+
+static
+SessionInfo * _session_info_new(const char *user, const char *pwd,
+                                const char* service, GHashTable *env)
+{
+    SessionInfo *info = g_slice_new0(SessionInfo);
+
+    info->username = g_strdup(user);
+    info->password = g_strdup(pwd);
+    info->service = g_strdup(service);
+    info->environment = g_hash_table_ref(env);
+
+    return info;
+}
+
+static
+void _session_info_clear(SessionInfo **info)
+{
+    if (!info || !*info) return;
+    g_free ((*info)->username);
+    g_free ((*info)->password);
+    g_free ((*info)->service);
+    g_hash_table_unref((*info)->environment);
+
+    g_slice_free1(sizeof(SessionInfo), *info);
+    *info = NULL;
+}
+
 struct _TlmSeatPrivate
 {
     TlmConfig *config;
     gchar *id;
     gchar *default_user;
     gchar *path;
-    gchar *next_service;
-    gchar *next_user;
-    gchar *next_password;
-    GHashTable *next_environment;
+    SessionInfo *next_session_info;
+    SessionInfo *pending_session_info;
     gint64 prev_time;
     gint32 prev_count;
     gboolean default_active;
@@ -81,32 +115,12 @@ struct _TlmSeatPrivate
     TlmDbusObserver *dbus_observer; /* dbus server accessed only by user who has
     active session */
     TlmDbusObserver *prev_dbus_observer;
+    int watch_id;
 };
-
-typedef struct _DelayClosure
-{
-    TlmSeat *seat;
-    gchar *service;
-    gchar *username;
-    gchar *password;
-    GHashTable *environment;
-} DelayClosure;
 
 static void
 _disconnect_session_signals (
         TlmSeat *seat);
-
-static void
-_reset_next (TlmSeatPrivate *priv)
-{
-    g_clear_string (&priv->next_service);
-    g_clear_string (&priv->next_user);
-    g_clear_string (&priv->next_password);
-    if (priv->next_environment) {
-        g_hash_table_unref (priv->next_environment);
-        priv->next_environment = NULL;
-    }
-}
 
 static void
 _handle_session_created (
@@ -172,14 +186,14 @@ _handle_session_terminated (
                                 TLM_CONFIG_GENERAL,
                                 TLM_CONFIG_GENERAL_AUTO_LOGIN,
                                 TRUE) ||
-                                seat->priv->next_user) {
-        DBG ("auto re-login with '%s'", seat->priv->next_user);
-        tlm_seat_create_session (seat,
-                seat->priv->next_service,
-                seat->priv->next_user,
-                seat->priv->next_password,
-                seat->priv->next_environment);
-        _reset_next (priv);
+                                seat->priv->next_session_info) {
+        SessionInfo *session_info = seat->priv->next_session_info;
+        DBG ("auto re-login with '%s'", session_info->username);
+        tlm_seat_create_session (seat, session_info->service,
+                session_info->username,
+                session_info->password,
+                session_info->environment);
+        _session_info_clear(&seat->priv->next_session_info);
     }
 }
 
@@ -305,8 +319,8 @@ tlm_seat_finalize (GObject *self)
     g_clear_string (&priv->id);
     g_clear_string (&priv->default_user);
     g_clear_string (&priv->path);
-
-    _reset_next (priv);
+    _session_info_clear(&priv->pending_session_info);
+    _session_info_clear(&priv->next_session_info);
 
     G_OBJECT_CLASS (tlm_seat_parent_class)->finalize (self);
 }
@@ -508,11 +522,8 @@ tlm_seat_switch_user (TlmSeat *seat,
                 environment);
     }
 
-    _reset_next (priv);
-    priv->next_service = g_strdup (service);
-    priv->next_user = g_strdup (username);
-    priv->next_password = g_strdup (password);
-    priv->next_environment = g_hash_table_ref (environment);
+    priv->next_session_info = _session_info_new(username, password, service,
+            environment);
 
     return tlm_seat_terminate_session (seat);
 }
@@ -554,29 +565,21 @@ _build_user_name (const gchar *template, const gchar *seat_id)
 }
 
 static gboolean
-_delayed_session (gpointer user_data)
+_proceed_pending_session (gpointer user_data)
 {
-    DelayClosure *delay_closure = (DelayClosure *) user_data;
+    TlmSeat *seat = TLM_SEAT(user_data);
 
-    DBG ("delayed relogin for closure %p", delay_closure);
-    g_return_val_if_fail (user_data, G_SOURCE_REMOVE);
+    g_return_val_if_fail (seat, G_SOURCE_REMOVE);
 
-    DBG ("delayed relogin for seat=%s, service=%s, user=%s",
-         delay_closure->seat->priv->id,
-         delay_closure->service,
-         delay_closure->username);
-    tlm_seat_create_session (delay_closure->seat,
-                             delay_closure->service,
-                             delay_closure->username,
-                             delay_closure->password,
-                             delay_closure->environment);
-    g_object_unref (delay_closure->seat);
-    g_free (delay_closure->service);
-    g_free (delay_closure->username);
-    g_free (delay_closure->password);
-    if (delay_closure->environment)
-        g_hash_table_unref (delay_closure->environment);
-    g_slice_free (DelayClosure, delay_closure);
+    if (seat->priv->pending_session_info) {
+        SessionInfo *info = seat->priv->pending_session_info;
+        DBG ("delayed re-login for seat=%s, service=%s, user=%s",
+                seat->priv->id, info->service, info->username);
+        tlm_seat_create_session (seat, info->service, info->username,
+                info->password, info->environment);
+        _session_info_clear(&seat->priv->pending_session_info);
+    }
+
     return G_SOURCE_REMOVE;
 }
 
@@ -590,10 +593,16 @@ tlm_seat_create_session (TlmSeat *seat,
     g_return_val_if_fail (seat && TLM_IS_SEAT(seat), FALSE);
     TlmSeatPrivate *priv = TLM_SEAT_PRIV (seat);
 
-    if (priv->session != NULL) {
+    if (priv->session || priv->pending_session_info) {
         g_signal_emit (seat, signals[SIG_SESSION_ERROR],  0,
                 TLM_ERROR_SESSION_ALREADY_EXISTS);
         return FALSE;
+    }
+
+    if (priv->watch_id) {
+        priv->pending_session_info = _session_info_new(username, password,
+                service, environment);
+        return TRUE;
     }
 
     if (g_get_monotonic_time () - priv->prev_time < 1000000) {
@@ -602,14 +611,9 @@ tlm_seat_create_session (TlmSeat *seat,
         priv->prev_count++;
         if (priv->prev_count > 3) {
             WARN ("relogins spinning too fast, delay...");
-            DelayClosure *delay_closure = g_slice_new0 (DelayClosure);
-            delay_closure->seat = g_object_ref (seat);
-            delay_closure->service = g_strdup (service);
-            delay_closure->username = g_strdup (username);
-            delay_closure->password = g_strdup (password);
-            if (environment)
-                delay_closure->environment = g_hash_table_ref (environment);
-            g_timeout_add_seconds (10, _delayed_session, delay_closure);
+            priv->pending_session_info = _session_info_new(username, password,
+                    service, environment);
+            g_timeout_add_seconds (10, _proceed_pending_session, seat);
             return TRUE;
         }
     } else {
@@ -618,16 +622,17 @@ tlm_seat_create_session (TlmSeat *seat,
     }
 
     if (!service) {
+        const char *pam_service = username ? TLM_CONFIG_GENERAL_PAM_SERVICE
+                 : TLM_CONFIG_GENERAL_DEFAULT_PAM_SERVICE;
         DBG ("PAM service not defined, looking up configuration");
-        service = tlm_config_get_string (priv->config,
-                                         priv->id,
-                                         username ? TLM_CONFIG_GENERAL_PAM_SERVICE : TLM_CONFIG_GENERAL_DEFAULT_PAM_SERVICE);
-        if (!service)
-            service = tlm_config_get_string (priv->config,
-                                             TLM_CONFIG_GENERAL,
-                                             username ? TLM_CONFIG_GENERAL_PAM_SERVICE : TLM_CONFIG_GENERAL_DEFAULT_PAM_SERVICE);
-        if (!service)
-            service = username ? "tlm-login" : "tlm-default-login";
+
+        if (!(service = tlm_config_get_string (priv->config, priv->id,
+                pam_service))) {
+            if (!(service = tlm_config_get_string (priv->config,
+                    TLM_CONFIG_GENERAL, pam_service))) {
+                service = username ? "tlm-login" : "tlm-default-login";
+            }
+        }
     }
     DBG ("using PAM service %s for seat %s", service, priv->id);
 
@@ -646,7 +651,8 @@ tlm_seat_create_session (TlmSeat *seat,
             if (name_tmpl)
                 priv->default_user = _build_user_name (name_tmpl, priv->id);
         }
-        if (priv->default_user) {
+
+        if (priv->default_user){
             priv->default_active = TRUE;
             g_signal_emit (seat,
                            signals[SIG_PREPARE_USER_LOGIN],
@@ -655,9 +661,7 @@ tlm_seat_create_session (TlmSeat *seat,
         }
     }
 
-    priv->session = tlm_session_remote_new (priv->config,
-            priv->id,
-            service,
+    priv->session = tlm_session_remote_new (priv->config, priv->id, service,
             priv->default_active ? priv->default_user : username);
     if (!priv->session) {
         g_signal_emit (seat, signals[SIG_SESSION_ERROR], 0,
@@ -726,16 +730,64 @@ tlm_seat_get_session_info (TlmSeat *seat, const gchar *sessionid)
     return TRUE;
 }
 
+
+static void
+_seat_watch_cb (const gchar *watch_item, gboolean is_final, GError *error,
+                gpointer user_data)
+{
+    TlmSeat *seat = NULL;
+    g_return_if_fail (watch_item && user_data);
+
+    seat = TLM_SEAT(user_data);
+
+    if (error) {
+      WARN ("Error in notify %s on seat %s: %s", watch_item, seat->priv->id,
+          error->message);
+      g_error_free (error);
+      return;
+    }
+
+    DBG ("seat %s notify for %s", seat->priv->id, watch_item);
+
+    if (is_final) {
+        seat->priv->watch_id = 0;
+        if (seat->priv->pending_session_info)
+            _proceed_pending_session(seat);
+    }
+}
+
 TlmSeat *
 tlm_seat_new (TlmConfig *config,
               const gchar *id,
               const gchar *path)
 {
-    TlmSeat *seat = g_object_new (TLM_TYPE_SEAT,
-                         "config", config,
-                         "id", id,
-                         "path", path,
-                         NULL);
+    guint nwatch = 0;
+    TlmSeat *seat = g_object_new (TLM_TYPE_SEAT, "config", config,
+                                  "id", id, "path", path, NULL);
+    if (!seat) return NULL;
+
+    if ((nwatch = tlm_config_get_uint (seat->priv->config, id,
+                                  TLM_CONFIG_SEAT_NWATCH, 0))) {
+        int x;
+        gchar **watch_items = g_new0 (gchar *, nwatch + 1);
+
+        for (x = 0; x < nwatch; x++) {
+          gchar *watchx = g_strdup_printf ("%s%u", TLM_CONFIG_SEAT_WATCHX, x);
+          watch_items[x] = (char *)tlm_config_get_string (
+              seat->priv->config, id, watchx);
+          g_free (watchx);
+        }
+        watch_items[nwatch] = NULL;
+
+        if ((seat->priv->watch_id = tlm_utils_watch_for_files (
+            (const gchar **)watch_items, _seat_watch_cb, seat)) <= 0) {
+            WARN ("Failed to add watch for on seat %s", id);
+            // FIXME: Can we ignore watch and continue using seat???
+            g_object_unref(seat);
+            seat = NULL;
+        }
+        g_free (watch_items);
+    }
+
     return seat;
 }
-

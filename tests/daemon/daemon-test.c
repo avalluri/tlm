@@ -239,6 +239,7 @@ START_TEST (test_login_user)
     GVariant *venv = NULL;
     GVariant *vseat = NULL;
     gchar *seat = NULL;
+    gchar *session_id = NULL;
 
     vseat = _get_property ("Seat");
     fail_if (vseat == NULL);
@@ -263,7 +264,9 @@ START_TEST (test_login_user)
     g_hash_table_unref (environ);
 
     fail_if (tlm_dbus_login_call_login_user_sync (login_object,
-            "seat0", "test01234567", "test1", venv, NULL, &error) == TRUE);
+            "seat0", "test01234567", "test1", venv, &session_id, NULL, &error) == TRUE);
+    fail_if(session_id);
+    free(session_id);
 
     if (error) {
         g_error_free (error);
