@@ -57,7 +57,7 @@ int main (int argc, char *argv[])
     gchar *session_type = NULL;
     gchar *pam_defserv = NULL;
     gchar *pam_serv = NULL;
-    gchar *watchx = NULL;
+    gchar **watches = NULL;
     gchar *rtimemode = NULL;
     GKeyFile *kf;
     GError *error = NULL;
@@ -104,12 +104,8 @@ int main (int argc, char *argv[])
           0, G_OPTION_ARG_STRING, &pam_serv,
           "pam service",
           NULL },
-        { "nwatch", 'h',
-          0, G_OPTION_ARG_INT, &nwatch,
-          "number of seat-ready watch items",
-          NULL },
         { "watchx", 'i',
-          0, G_OPTION_ARG_STRING, &watchx,
+          0, G_OPTION_ARG_FILENAME_ARRAY, &watches,
           "seat-ready watch item",
           NULL },
         { "vtnr", 'j',
@@ -240,22 +236,17 @@ int main (int argc, char *argv[])
                                TLM_CONFIG_GENERAL_SESSION_TYPE,
                                session_type);
     }
-    if (nwatch >= 0) {
-        g_key_file_set_integer (kf,
-                                sname,
-                                TLM_CONFIG_SEAT_NWATCH,
-                                nwatch);
+
+    if (watches) {
+        for (nwatch = 0; watches[nwatch]; nwatch++) {
+            gchar *kname = g_strdup_printf ("%s%d", TLM_CONFIG_SEAT_WATCHX,
+                                        nwatch);
+            g_key_file_set_string (kf, sname, kname, watches[nwatch]);
+            g_free (kname);
+        }
+        g_key_file_set_integer (kf, sname, TLM_CONFIG_SEAT_NWATCH, nwatch);
     }
-    if (watchx) {
-        gchar *kname = g_strdup_printf ("%s%d",
-                                        TLM_CONFIG_SEAT_WATCHX,
-                                        nwatch - 1);
-        g_key_file_set_string (kf,
-                               sname,
-                               kname,
-                               watchx);
-        g_free (kname);
-    }
+
     if (vtnr >= 0) {
         g_key_file_set_integer (kf,
                                 sname,
@@ -288,7 +279,7 @@ err_exit:
     g_free (session_type);
     g_free (pam_defserv);
     g_free (pam_serv);
-    g_free (watchx);
+    g_strfreev (watches);
     g_free (rtimemode);
     g_key_file_free (kf);
     if (!lockf (lockfd, F_ULOCK, 0)) {}
