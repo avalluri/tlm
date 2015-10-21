@@ -1,3 +1,11 @@
+tlm (1.2.3) stable; urgency=low
+
+  * Handle watches also when login is requested by tlm-client
+  * Support multiple watches in tlm-seatconf
+  * Make tlm-launcher D-Bus interface optional
+
+ -- Jussi Laako <jussi.laako@linux.intel.com>  Wed, 21 Oct 2015 15:17:00 +0300
+
 tlm (1.2.2) stable; urgency=low
 
   * Fix signal handling issues
