@@ -466,7 +466,7 @@ _process_request (
     TlmRequest* req = NULL;
     TlmDbusRequest* dbus_req = NULL;
     TlmSeat *seat = NULL;
-    gboolean retval = NULL;
+    gboolean retval = FALSE;
     self->priv->request_id = 0;
 
     if (!self->priv->active_request) {

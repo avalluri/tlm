@@ -35,6 +35,7 @@
 #include <sys/types.h>
 #include <sys/prctl.h>
 #include <glib.h>
+#include <glib-unix.h>
 
 #include "common/tlm-log.h"
 #include "common/tlm-utils.h"
@@ -53,32 +54,32 @@ static void _tlm_launcher_process (TlmLauncher *l);
 static gboolean
 _handle_quit_signal (gpointer user_data)
 {
-    TlmLauncher *l = (TlmLauncher *) user_data;
+  TlmLauncher *l = (TlmLauncher *) user_data;
 
-    g_return_val_if_fail (l != NULL, G_SOURCE_CONTINUE);
-    DBG ("Received quit signal");
-    if (l->proc_manager) {
-        g_object_unref (l->proc_manager);
-        l->proc_manager = NULL;
-    }
-    if (l->loop)
-        g_main_loop_quit (l->loop);
+  g_return_val_if_fail (l != NULL, G_SOURCE_CONTINUE);
+  DBG ("Received quit signal");
+  if (l->proc_manager) {
+    g_object_unref (l->proc_manager);
+    l->proc_manager = NULL;
+  }
+  if (l->loop)
+   g_main_loop_quit (l->loop);
 
-    return G_SOURCE_CONTINUE;
+  return G_SOURCE_CONTINUE;
 }
 
 static void
 _install_sighandlers (TlmLauncher *l)
 {
-    if (signal (SIGINT, SIG_IGN) == SIG_ERR)
-        WARN ("failed to ignore SIGINT: %s", strerror(errno));
+  if (signal (SIGINT, SIG_IGN) == SIG_ERR)
+    WARN ("failed to ignore SIGINT: %s", strerror(errno));
 
-    l->sig_source_id[0] = g_unix_signal_add (SIGTERM, _handle_quit_signal, l);
-    l->sig_source_id[1] = g_unix_signal_add (SIGHUP, _handle_quit_signal, l);
-    l->sig_source_id[2] = g_unix_signal_add (SIGINT, _handle_quit_signal, l);
+  l->sig_source_id[0] = g_unix_signal_add (SIGTERM, _handle_quit_signal, l);
+  l->sig_source_id[1] = g_unix_signal_add (SIGHUP, _handle_quit_signal, l);
+  l->sig_source_id[2] = g_unix_signal_add (SIGINT, _handle_quit_signal, l);
 
-    if (prctl(PR_SET_PDEATHSIG, SIGHUP))
-        WARN ("failed to set parent death signal");
+  if (prctl(PR_SET_PDEATHSIG, SIGHUP))
+    WARN ("failed to set parent death signal");
 }
 
 static void
@@ -88,7 +89,7 @@ _tlm_launcher_init (TlmLauncher *l)
   l->loop = g_main_loop_new (NULL, FALSE);
   l->fp = NULL;
   l->socket_watcher = 0;
-  l->proc_manager = 0;
+  l->proc_manager = NULL;
   _install_sighandlers (l);
 }
 
@@ -145,10 +146,7 @@ _on_socket_ready (
 
 static void _tlm_launcher_process (TlmLauncher *l)
 {
-  char str[1024];
-  gchar **argv = NULL;
-  gint wait = 0;
-  pid_t child_pid = 0;
+  char str[4096];
 
   if (!l || !l->fp) return;
 
@@ -210,7 +208,6 @@ int main (int argc, char *argv[])
   TlmLauncher launcher;
   gchar *address = NULL;
   TlmConfig *config = NULL;
-  TlmProcessManager *proc_manager = NULL;
   const gchar *runtime_dir = NULL;
   gchar *sessionid = NULL;
   gboolean enable_dbus = FALSE;
@@ -256,21 +253,21 @@ int main (int argc, char *argv[])
   g_free (file);
 
   if (enable_dbus) {
-      runtime_dir = g_getenv ("XDG_RUNTIME_DIR");
-      if (sessionid && runtime_dir)
-          address = g_strdup_printf ("unix:path=%s/%s", runtime_dir,
-                  sessionid);
-      else if (sessionid)
-          address = g_strdup_printf ("unix:path=/run/user/%d/%s", getuid(),
-                  sessionid);
-      else if (runtime_dir)
-          address = g_strdup_printf ("unix:path=%s/%d", runtime_dir, getpid());
-      else
-          address = g_strdup_printf ("unix:path=/run/user/%d/%d", getuid(),
-                  getpid());
-      g_setenv ("TLM_LAUNCHER_DBUS_ADDRESS", address, TRUE);
-      DBG ("Tlm launcher pid:%d, dbus addr: %s, sessionid: %s,"
-              " runtimedir: %s\n", getpid(), address, sessionid, runtime_dir);
+    runtime_dir = g_getenv ("XDG_RUNTIME_DIR");
+    if (sessionid && runtime_dir)
+      address = g_strdup_printf ("unix:path=%s/%s", runtime_dir,
+                sessionid);
+    else if (sessionid)
+      address = g_strdup_printf ("unix:path=/run/user/%d/%s", getuid(),
+                sessionid);
+    else if (runtime_dir)
+      address = g_strdup_printf ("unix:path=%s/%d", runtime_dir, getpid());
+    else
+      address = g_strdup_printf ("unix:path=/run/user/%d/%d", getuid(),
+                getpid());
+    g_setenv ("TLM_LAUNCHER_DBUS_ADDRESS", address, TRUE);
+    DBG ("Tlm launcher pid:%d, dbus addr: %s, sessionid: %s,"
+         " runtimedir: %s\n", getpid(), address, sessionid, runtime_dir);
   }
 
   config = tlm_config_new ();

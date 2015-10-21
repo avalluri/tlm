@@ -92,18 +92,6 @@ _handle_dbus_server_new_connection (
         GObject *dbus_server);
 
 static void
-_handle_dbus_server_client_added (
-        TlmProcessManager *self,
-        GObject *dbus_adapter,
-        GObject *dbus_server);
-
-static void
-_handle_dbus_server_client_removed (
-        TlmProcessManager *self,
-        GObject *dbus_adapter,
-        GObject *dbus_server);
-
-static void
 _destroy_process_obj (
 		struct ProcessObject *obj)
 {
@@ -238,17 +226,6 @@ tlm_process_manager_dispose (GObject *object)
 }
 
 static void
-_on_process_manager_adapter_dispose (
-        TlmProcessManager *self,
-        GObject *dead)
-{
-    GList *head=NULL, *elem=NULL, *next;
-
-    g_return_if_fail (self && TLM_IS_PROCESS_MANAGER(self) && dead &&
-                TLM_IS_DBUS_LAUNCHER_ADAPTER(dead));
-}
-
-static void
 _handle_dbus_server_new_connection (
         TlmProcessManager *self,
         GDBusConnection *dbus_connection,
@@ -265,37 +242,11 @@ _handle_dbus_server_new_connection (
 }
 
 static void
-_handle_dbus_server_client_added (
-        TlmProcessManager *self,
-        GObject *dbus_adapter,
-        GObject *dbus_server)
-{
-    g_return_if_fail (self && TLM_IS_PROCESS_MANAGER(self) && dbus_adapter &&
-            TLM_IS_DBUS_LAUNCHER_ADAPTER(dbus_adapter));
-    g_object_weak_ref (G_OBJECT (dbus_adapter),
-            (GWeakNotify)_on_process_manager_adapter_dispose, self);
-}
-
-static void
-_handle_dbus_server_client_removed (
-        TlmProcessManager *self,
-        GObject *dbus_adapter,
-        GObject *dbus_server)
-{
-    g_return_if_fail (self && TLM_IS_PROCESS_MANAGER(self) && dbus_adapter &&
-            TLM_IS_DBUS_LAUNCHER_ADAPTER(dbus_adapter));
-    g_object_weak_unref (G_OBJECT (dbus_adapter),
-            (GWeakNotify)_on_process_manager_adapter_dispose, self);
-}
-
-static void
 _on_process_down_cb (
         GPid  pid,
         gint  status,
         gpointer data)
 {
-    GHashTableIter iter;
-    guint obj_pid = 0;
     gboolean is_leader = FALSE;
 
     g_spawn_close_pid (pid);
@@ -532,12 +483,6 @@ tlm_process_manager_new (
         g_signal_connect_swapped (proc_manager->priv->dbus_server,
                 "new-connection",
                 G_CALLBACK(_handle_dbus_server_new_connection), proc_manager);
-        g_signal_connect_swapped (proc_manager->priv->dbus_server,
-                "client-added", G_CALLBACK (_handle_dbus_server_client_added),
-                proc_manager);
-        g_signal_connect_swapped (proc_manager->priv->dbus_server,
-                "client-removed",
-                G_CALLBACK(_handle_dbus_server_client_removed), proc_manager);
     }
     return proc_manager;
 }
