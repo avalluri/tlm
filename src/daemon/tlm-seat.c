@@ -182,18 +182,21 @@ _handle_session_terminated (
         return;
     }
 
-    if (tlm_config_get_boolean (priv->config,
-                                TLM_CONFIG_GENERAL,
-                                TLM_CONFIG_GENERAL_AUTO_LOGIN,
-                                TRUE) ||
-                                seat->priv->next_session_info) {
+    if (seat->priv->next_session_info) {
         SessionInfo *session_info = seat->priv->next_session_info;
-        DBG ("auto re-login with '%s'", session_info->username);
+
+        DBG ("re-login with user '%s'", session_info->username);
         tlm_seat_create_session (seat, session_info->service,
                 session_info->username,
                 session_info->password,
                 session_info->environment);
         _session_info_clear(&seat->priv->next_session_info);
+    } else if (tlm_config_get_boolean (priv->config,
+                                TLM_CONFIG_GENERAL,
+                                TLM_CONFIG_GENERAL_AUTO_LOGIN,
+                                TRUE)) {
+       DBG ("auto re-login with default user");
+       tlm_seat_create_session(seat, NULL, NULL, NULL, NULL);
     }
 }
 
